@@ -1,0 +1,13 @@
+{
+  "name": "ticker-tracker",
+  "version": "1.0.0",
+  "description": "Cloud ticker tracker — monitors Twitter accounts for $TICKER mentions via RSS",
+  "private": true,
+  "scripts": {
+    "fetch": "node fetch-tickers.js",
+    "email": "node send-email.js"
+  },
+  "dependencies": {
+    "@xmldom/xmldom": "^0.8.10"
+  }
+}

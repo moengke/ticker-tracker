@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ticker Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0a0c0f; --bg2: #111418; --bg3: #181c22;
+    --border: #1e2530; --border2: #2a3341;
+    --accent: #00e5a0; --accent2: #00b87a;
+    --muted: #4a5568; --text: #e2e8f0; --text2: #8899aa;
+    --red: #ff4d6d; --amber: #f59e0b;
+    --mono: 'IBM Plex Mono', monospace;
+    --sans: 'IBM Plex Sans', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--sans); min-height: 100vh; padding: 28px 20px;
+  }
+  body::before {
+    content: ''; pointer-events: none; position: fixed; inset: 0;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px,
+      rgba(0,0,0,0.07) 2px, rgba(0,0,0,0.07) 4px);
+    z-index: 9999;
+  }
+  .layout {
+    max-width: 960px; margin: 0 auto;
+    display: grid; grid-template-columns: 270px 1fr; gap: 18px; align-items: start;
+  }
+  .header {
+    grid-column: 1 / -1; display: flex; align-items: baseline; gap: 14px;
+    border-bottom: 1px solid var(--border); padding-bottom: 14px; margin-bottom: 2px;
+  }
+  .header h1 { font-family: var(--mono); font-size: 21px; font-weight: 600;
+    letter-spacing: -0.02em; color: var(--accent); }
+  .header .sub { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .header .window-tag {
+    margin-left: auto; font-family: var(--mono); font-size: 10px;
+    color: var(--accent2); border: 1px solid var(--border2);
+    background: var(--bg2); padding: 3px 8px; border-radius: 4px;
+  }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted);
+    display: inline-block; transition: background 0.3s; flex-shrink: 0; }
+  .status-dot.active { background: var(--accent); box-shadow: 0 0 5px var(--accent);
+    animation: pulse 2s infinite; }
+  .status-dot.error { background: var(--red); }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .sidebar { display: flex; flex-direction: column; gap: 14px; }
+  .panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px; }
+  .panel-label { font-family: var(--mono); font-size: 10px; letter-spacing: 0.12em;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 10px; }
+
+  #accounts-list { list-style: none; display: flex; flex-direction: column; gap: 5px; }
+  #accounts-list li {
+    display: flex; align-items: center; justify-content: space-between;
+    background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 5px; padding: 6px 10px;
+    font-family: var(--mono); font-size: 12px; color: var(--text); gap: 7px;
+  }
+  #accounts-list li .handle { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #accounts-list li .remove-btn { background: none; border: none; color: var(--muted);
+    cursor: pointer; font-size: 15px; line-height: 1; transition: color 0.2s; flex-shrink: 0; }
+  #accounts-list li .remove-btn:hover { color: var(--red); }
+  #accounts-list li .fetch-status { font-size: 10px; color: var(--muted); flex-shrink: 0; }
+  #accounts-list li .fetch-status.ok { color: var(--accent2); }
+  #accounts-list li .fetch-status.err { color: var(--red); }
+
+  .add-row { display: flex; gap: 7px; margin-top: 9px; }
+  .add-row input {
+    flex: 1; background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: 5px; color: var(--text); font-family: var(--mono);
+    font-size: 12px; padding: 6px 9px; outline: none; transition: border-color 0.2s;
+  }
+  .add-row input::placeholder { color: var(--muted); }
+  .add-row input:focus { border-color: var(--accent2); }
+  .add-row button, .btn {
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: 5px;
+    color: var(--accent); font-family: var(--mono); font-size: 11px;
+    padding: 6px 11px; cursor: pointer; transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+  }
+  .add-row button:hover, .btn:hover { background: var(--border2); border-color: var(--accent2); }
+  .btn.primary { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 500; }
+  .btn.primary:hover { background: var(--accent2); border-color: var(--accent2); }
+  .btn.primary:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .controls-row { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+  select {
+    background: var(--bg3); border: 1px solid var(--border2); border-radius: 5px;
+    color: var(--text); font-family: var(--mono); font-size: 11px;
+    padding: 6px 9px; cursor: pointer; outline: none;
+  }
+  .refresh-info { font-family: var(--mono); font-size: 10px; color: var(--muted); margin-top: 9px; }
+  .refresh-info span { color: var(--text2); }
+
+  /* MAIN FEED */
+  .main { display: flex; flex-direction: column; gap: 14px; }
+
+  /* Stats bar */
+  .stats-bar {
+    display: flex; gap: 18px; background: var(--bg2);
+    border: 1px solid var(--border); border-radius: 6px; padding: 10px 14px;
+  }
+  .stat { display: flex; flex-direction: column; gap: 2px; }
+  .stat-val { font-family: var(--mono); font-size: 18px; font-weight: 600; color: var(--accent); }
+  .stat-lbl { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 0.06em; }
+
+  /* Ticker cards */
+  .ticker-list { display: flex; flex-direction: column; gap: 3px; }
+
+  .ticker-row {
+    display: grid; grid-template-columns: 34px 100px 1fr auto;
+    gap: 12px; align-items: center;
+    background: var(--bg2); border: 1px solid var(--border);
+    border-radius: 6px; padding: 11px 14px;
+    animation: slideIn 0.2s ease; transition: border-color 0.2s;
+  }
+  .ticker-row:hover { border-color: var(--border2); }
+  .ticker-row.rank-1 { border-left: 2px solid var(--accent); }
+  .ticker-row.rank-2 { border-left: 2px solid var(--accent2); }
+  .ticker-row.rank-3 { border-left: 2px solid #007a55; }
+  @keyframes slideIn { from { opacity:0; transform:translateY(-5px); } to { opacity:1; transform:none; } }
+
+  .ticker-rank { font-family: var(--mono); font-size: 11px; color: var(--muted); text-align: right; }
+
+  .ticker-symbol-col { display: flex; flex-direction: column; gap: 5px; }
+  .ticker-symbol {
+    font-family: var(--mono); font-size: 17px; font-weight: 600;
+    color: var(--accent); letter-spacing: -0.01em;
+  }
+  .ticker-symbol::before { content: '$'; font-size: 11px; vertical-align: super; opacity: 0.55; }
+
+  /* Mention bar */
+  .mention-bar-wrap { display: flex; align-items: center; gap: 6px; }
+  .mention-bar-track {
+    flex: 1; height: 4px; background: var(--border2); border-radius: 2px; overflow: hidden;
+  }
+  .mention-bar-fill { height: 100%; background: var(--accent); border-radius: 2px;
+    transition: width 0.4s ease; }
+  .mention-count { font-family: var(--mono); font-size: 11px; color: var(--accent2);
+    white-space: nowrap; }
+
+  .ticker-meta { display: flex; flex-direction: column; gap: 4px; overflow: hidden; }
+  .ticker-accounts { display: flex; gap: 5px; flex-wrap: wrap; }
+  .ticker-account-pill {
+    font-family: var(--mono); font-size: 10px; color: var(--accent2);
+    background: var(--bg3); border: 1px solid var(--border2);
+    border-radius: 3px; padding: 1px 6px;
+  }
+  .ticker-snippet {
+    font-size: 12px; color: var(--text2); line-height: 1.5;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+
+  .ticker-time { font-family: var(--mono); font-size: 10px; color: var(--muted);
+    white-space: nowrap; text-align: right; align-self: start; padding-top: 2px; }
+
+  /* Clickable row */
+  .ticker-row { cursor: pointer; }
+  .ticker-row.open { border-color: var(--accent2); border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .expand-hint { font-family: var(--mono); font-size: 10px; color: var(--muted);
+    margin-left: auto; transition: color 0.2s; user-select: none; }
+  .ticker-row:hover .expand-hint { color: var(--accent2); }
+  .ticker-row.open .expand-hint { color: var(--accent); }
+
+  /* Tweet drawer */
+  .tweet-drawer {
+    background: var(--bg3); border: 1px solid var(--accent2);
+    border-top: none; border-radius: 0 0 6px 6px;
+    overflow: hidden;
+    max-height: 0; opacity: 0;
+    transition: max-height 0.28s ease, opacity 0.2s ease;
+  }
+  .tweet-drawer.open { max-height: 600px; opacity: 1; }
+  .tweet-drawer-inner { padding: 0 14px 12px; }
+
+  .tweet-drawer-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 9px 0 8px; border-bottom: 1px solid var(--border);
+    margin-bottom: 10px;
+  }
+  .tweet-drawer-title {
+    font-family: var(--mono); font-size: 11px; color: var(--accent2);
+    letter-spacing: 0.06em;
+  }
+  .tweet-drawer-count {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+  }
+
+  .tweet-item {
+    display: grid; grid-template-columns: auto 1fr;
+    gap: 10px; padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .tweet-item:last-child { border-bottom: none; }
+  .tweet-account {
+    font-family: var(--mono); font-size: 11px; color: var(--accent2);
+    white-space: nowrap; padding-top: 1px;
+  }
+  .tweet-account::before { content: '@'; }
+  .tweet-body { display: flex; flex-direction: column; gap: 4px; }
+  .tweet-text {
+    font-size: 12px; color: var(--text2); line-height: 1.6;
+  }
+  .tweet-text .hl { color: var(--accent); font-weight: 500; }
+  .tweet-footer { display: flex; gap: 10px; align-items: center; }
+  .tweet-time { font-family: var(--mono); font-size: 10px; color: var(--muted); }
+
+  .state-msg {
+    background: var(--bg2); border: 1px dashed var(--border2);
+    border-radius: 6px; padding: 36px 20px; text-align: center;
+    font-family: var(--mono); font-size: 12px; color: var(--muted); line-height: 2.2;
+  }
+  .state-msg .big { font-size: 26px; display: block; margin-bottom: 8px; color: var(--border2); }
+
+  .log-panel { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 11px 13px; }
+  .log-entries { max-height: 90px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+  .log-entry { font-family: var(--mono); font-size: 10px; color: var(--muted); line-height: 1.6; }
+  .log-entry.ok { color: var(--accent2); }
+  .log-entry.err { color: var(--red); }
+  .log-entry.info { color: var(--text2); }
+
+  @media (max-width: 640px) { .layout { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="layout">
+
+  <div class="header">
+    <h1>ticker-tracker</h1>
+    <span class="sub">// frequency monitor</span>
+    <span class="window-tag" id="window-tag">5-day window</span>
+    <span class="status-dot" id="status-dot"></span>
+  </div>
+
+  <aside class="sidebar">
+    <div class="panel">
+      <div class="panel-label">Accounts to watch</div>
+      <ul id="accounts-list"></ul>
+      <div class="add-row">
+        <input id="add-input" type="text" placeholder="handle (no @)" maxlength="50" />
+        <button onclick="addAccount()">Add</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-label">Controls</div>
+      <div class="controls-row">
+        <button class="btn primary" id="fetch-btn" onclick="fetchAll()">↻ Refresh</button>
+        <select id="interval-select" onchange="updateInterval()">
+          <option value="0">Manual only</option>
+          <option value="60" selected>Every 1 min</option>
+          <option value="300">Every 5 min</option>
+          <option value="600">Every 10 min</option>
+        </select>
+      </div>
+      <div class="refresh-info">
+        Auto-refresh: <span id="interval-label">every 1 min</span>
+        &nbsp;|&nbsp; Last: <span id="last-refresh">—</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-label">Ranking logic</div>
+      <div style="font-size:11px;color:var(--text2);line-height:1.9;font-family:var(--mono);">
+        Tickers ranked by <span style="color:var(--accent)">mention count</span>
+        over the trailing <span style="color:var(--accent)">5 days</span>.<br>
+        Tiebreaker: unique accounts.<br>
+        Each tweet counted once per ticker — no double-counting.
+      </div>
+    </div>
+  </aside>
+
+  <main class="main">
+    <div class="stats-bar" id="stats-bar" style="display:none">
+      <div class="stat"><div class="stat-val" id="stat-mentions">0</div><div class="stat-lbl">TOTAL MENTIONS</div></div>
+      <div class="stat"><div class="stat-val" id="stat-tickers">0</div><div class="stat-lbl">UNIQUE TICKERS</div></div>
+      <div class="stat"><div class="stat-val" id="stat-accounts">0</div><div class="stat-lbl">ACTIVE ACCOUNTS</div></div>
+      <div class="stat"><div class="stat-val" id="stat-window">5d</div><div class="stat-lbl">WINDOW</div></div>
+    </div>
+
+    <div class="panel-label" style="padding-left:2px;">Top tickers by mention frequency</div>
+    <div id="ticker-container">
+      <div class="state-msg">
+        <span class="big">📡</span>
+        Add accounts on the left, then hit <span style="color:var(--accent)">Refresh</span>.<br>
+        Tickers are ranked by how many times they've been mentioned<br>
+        across all accounts over the past 5 days.
+      </div>
+    </div>
+
+    <div class="log-panel">
+      <div class="panel-label" style="margin-bottom:7px;">Activity log</div>
+      <div class="log-entries" id="log"></div>
+    </div>
+  </main>
+
+</div>
+
+<script>
+const STORAGE_KEY  = 'tt_accounts';
+const STORAGE_RAW  = 'tt_raw_mentions';
+const CORS_PROXY   = 'https://api.allorigins.win/get?url=';
+const RSS_BASE     = 'https://rsshub.app/twitter/user/';
+const HISTORY_DAYS = 5;
+const TOP_N        = 10;
+
+let accounts    = JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]');
+if (!accounts.length) accounts = ['unusual_whales', 'zerohedge'];
+
+// Raw mention store: { symbol, account, snippet, time, tweetId }
+let rawMentions = JSON.parse(localStorage.getItem(STORAGE_RAW) || '[]');
+let intervalTimer = null;
+
+// ── Logging ──────────────────────────────────────────────────────────────
+function log(msg, type = 'info') {
+  const el = document.getElementById('log');
+  const div = document.createElement('div');
+  div.className = `log-entry ${type}`;
+  div.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+  el.prepend(div);
+  while (el.children.length > 60) el.removeChild(el.lastChild);
+}
+
+// ── Account management ────────────────────────────────────────────────────
+function saveAccounts() { localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts)); }
+function saveRaw()      { localStorage.setItem(STORAGE_RAW, JSON.stringify(rawMentions)); }
+
+function renderAccounts() {
+  const ul = document.getElementById('accounts-list');
+  ul.innerHTML = '';
+  if (!accounts.length) {
+    ul.innerHTML = '<li style="color:var(--muted);font-size:11px;font-family:var(--mono);border:none;background:none;">No accounts added yet.</li>';
+    return;
+  }
+  accounts.forEach(h => {
+    const li = document.createElement('li');
+    li.dataset.handle = h;
+    li.innerHTML = `<span class="handle">@${h}</span>
+      <span class="fetch-status" id="fs-${h}">—</span>
+      <button class="remove-btn" onclick="removeAccount('${h}')" title="Remove">×</button>`;
+    ul.appendChild(li);
+  });
+}
+
+function addAccount() {
+  const input = document.getElementById('add-input');
+  const handle = input.value.trim().replace(/^@/, '').toLowerCase();
+  if (!handle) return;
+  if (accounts.includes(handle)) { log(`@${handle} already in list`, 'err'); return; }
+  accounts.push(handle);
+  saveAccounts();
+  renderAccounts();
+  input.value = '';
+  log(`Added @${handle}`, 'ok');
+}
+
+function removeAccount(handle) {
+  accounts = accounts.filter(a => a !== handle);
+  rawMentions = rawMentions.filter(m => m.account !== handle);
+  saveAccounts();
+  saveRaw();
+  renderAccounts();
+  renderTickers();
+  log(`Removed @${handle}`, 'info');
+}
+
+document.getElementById('add-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') addAccount();
+});
+
+// ── Ticker parsing ────────────────────────────────────────────────────────
+const IGNORE = new Set([
+  'A','I','AM','AN','AS','AT','BE','BY','DO','GO','HE','IF','IN','IS','IT',
+  'ME','MY','NO','OF','OH','OK','ON','OR','SO','TO','UP','US','WE',
+  'AND','ARE','BUT','FOR','HAS','HER','HIM','HIS','HOW','ITS','MAY','NOT',
+  'OUR','OUT','OWN','SAY','SHE','THE','TOO','TWO','WAS','WHO','WHY','YET',
+  'YOU','CEO','CFO','COO','IPO','ETF','CPI','GDP','PMI','FED','WSJ','NYT',
+  'USA','SEC','DOJ','FBI','CIA','IMF','WTO','EST','PST','GMT','USD','EUR',
+  'GBP','JPY','BREAKING','RT','DM','PM','AM'
+]);
+
+function extractTickers(text) {
+  const upper = text.toUpperCase();
+  const re = /\$([A-Z]{1,5})(?=[^A-Z]|$)/g;
+  const found = []; let m;
+  while ((m = re.exec(upper)) !== null) {
+    if (!IGNORE.has(m[1])) found.push(m[1]);
+  }
+  return [...new Set(found)];
+}
+
+function stripHtml(h) { return h.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(); }
+
+// ── Deduplication ─────────────────────────────────────────────────────────
+function dedupeRaw(existing, incoming) {
+  const key = m => `${m.symbol}|${m.account}|${m.tweetId}`;
+  const seen = new Set(existing.map(key));
+  const added = [];
+  for (const m of incoming) {
+    const k = key(m);
+    if (!seen.has(k)) { seen.add(k); added.push(m); }
+  }
+  return added;
+}
+
+// ── Build ranked leaderboard ──────────────────────────────────────────────
+function buildRanked(raw) {
+  const cutoff = Date.now() - HISTORY_DAYS * 86400 * 1000;
+  const window = raw.filter(m => new Date(m.time).getTime() >= cutoff);
+
+  const agg = new Map();
+  for (const m of window) {
+    if (!agg.has(m.symbol)) agg.set(m.symbol, {
+      symbol: m.symbol, mentionCount: 0, accounts: new Set(),
+      lastTime: m.time, recentSnippet: m.snippet, recentAccount: m.account,
+    });
+    const e = agg.get(m.symbol);
+    e.mentionCount++;
+    e.accounts.add(m.account);
+    if (new Date(m.time) > new Date(e.lastTime)) {
+      e.lastTime = m.time; e.recentSnippet = m.snippet; e.recentAccount = m.account;
+    }
+  }
+  return [...agg.values()]
+    .sort((a,b) => b.mentionCount - a.mentionCount || b.accounts.size - a.accounts.size)
+    .slice(0, TOP_N)
+    .map(e => ({
+      symbol: e.symbol, mentionCount: e.mentionCount,
+      uniqueAccounts: e.accounts.size, accounts: [...e.accounts],
+      lastTime: e.lastTime, recentSnippet: e.recentSnippet,
+    }));
+}
+
+// ── RSS fetch ─────────────────────────────────────────────────────────────
+async function fetchAccount(handle) {
+  const fsEl = document.getElementById(`fs-${handle}`);
+  if (fsEl) { fsEl.textContent = '…'; fsEl.className = 'fetch-status'; }
+
+  const rssUrl   = `${RSS_BASE}${handle}`;
+  const proxyUrl = `${CORS_PROXY}${encodeURIComponent(rssUrl)}`;
+  const resp = await fetch(proxyUrl);
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  const json = await resp.json();
+
+  const parser = new DOMParser();
+  const doc    = parser.parseFromString(json.contents, 'text/xml');
+  const items  = Array.from(doc.querySelectorAll('item'));
+  if (!items.length) throw new Error('No items in feed');
+
+  const raw = [];
+  items.forEach(item => {
+    const title   = item.querySelector('title')?.textContent || '';
+    const desc    = item.querySelector('description')?.textContent || '';
+    const pubDate = item.querySelector('pubDate')?.textContent || '';
+    const link    = item.querySelector('link')?.textContent || '';
+    const text    = stripHtml(title + ' ' + desc);
+    const tickers = extractTickers(text);
+    const time    = pubDate ? new Date(pubDate).toISOString() : new Date().toISOString();
+    const tweetId = link.split('/').pop() || `${handle}-${time}`;
+    tickers.forEach(symbol => raw.push({ symbol, account: handle, snippet: text.slice(0,200), time, tweetId }));
+  });
+
+  if (fsEl) { fsEl.textContent = `${items.length} tweets`; fsEl.className = 'fetch-status ok'; }
+  return raw;
+}
+
+// ── Main fetch loop ───────────────────────────────────────────────────────
+async function fetchAll() {
+  if (!accounts.length) { log('No accounts to fetch.', 'err'); return; }
+
+  const btn = document.getElementById('fetch-btn');
+  const dot = document.getElementById('status-dot');
+  btn.disabled = true; btn.textContent = '… fetching';
+  dot.className = 'status-dot active';
+
+  log(`Fetching ${accounts.length} account(s)…`);
+  const results = await Promise.allSettled(accounts.map(h => fetchAccount(h)));
+
+  let newRaw = [];
+  results.forEach((r, i) => {
+    const h = accounts[i];
+    if (r.status === 'fulfilled') {
+      newRaw.push(...r.value);
+      log(`@${h}: ${r.value.length} ticker mentions fetched`, r.value.length ? 'ok' : 'info');
+    } else {
+      const fsEl = document.getElementById(`fs-${h}`);
+      if (fsEl) { fsEl.textContent = 'error'; fsEl.className = 'fetch-status err'; }
+      log(`@${h}: ${r.reason?.message || 'failed'}`, 'err');
+    }
+  });
+
+  // Merge deduplicated
+  const added = dedupeRaw(rawMentions, newRaw);
+  rawMentions = [...rawMentions, ...added];
+  log(`+${added.length} new unique mentions`, added.length ? 'ok' : 'info');
+
+  // Prune old entries
+  const cutoff = Date.now() - HISTORY_DAYS * 86400 * 1000;
+  rawMentions = rawMentions.filter(m => new Date(m.time).getTime() >= cutoff);
+  saveRaw();
+
+  document.getElementById('last-refresh').textContent = new Date().toLocaleTimeString();
+  renderTickers();
+  btn.disabled = false; btn.textContent = '↻ Refresh';
+  dot.className = 'status-dot';
+}
+
+// ── Render ────────────────────────────────────────────────────────────────
+function formatTime(iso) {
+  const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+  if (diff < 60)    return `${diff}s ago`;
+  if (diff < 3600)  return `${Math.floor(diff/60)}m ago`;
+  if (diff < 86400) return `${Math.floor(diff/3600)}h ago`;
+  return `${Math.floor(diff/86400)}d ago`;
+}
+
+// Returns the 5 most recent raw mentions for a symbol within the window
+function getRecentTweets(symbol, n = 5) {
+  const cutoff = Date.now() - HISTORY_DAYS * 86400 * 1000;
+  return rawMentions
+    .filter(m => m.symbol === symbol && new Date(m.time).getTime() >= cutoff)
+    .sort((a, b) => new Date(b.time) - new Date(a.time))
+    .slice(0, n);
+}
+
+function toggleDrawer(symbol) {
+  const drawer = document.getElementById(`drawer-${symbol}`);
+  const row    = document.getElementById(`row-${symbol}`);
+  if (!drawer || !row) return;
+
+  const isOpen = drawer.classList.contains('open');
+  // Close all others first
+  document.querySelectorAll('.tweet-drawer.open').forEach(d => {
+    d.classList.remove('open');
+    const s = d.dataset.symbol;
+    document.getElementById(`row-${s}`)?.classList.remove('open');
+    const hint = document.querySelector(`#row-${s} .expand-hint`);
+    if (hint) hint.textContent = '▸ tweets';
+  });
+  if (isOpen) return; // was open, just close it
+
+  // Open this one
+  drawer.classList.add('open');
+  row.classList.add('open');
+  const hint = row.querySelector('.expand-hint');
+  if (hint) hint.textContent = '▾ close';
+
+  // Populate if empty
+  const inner = drawer.querySelector('.tweet-drawer-inner');
+  if (inner.dataset.loaded) return;
+  inner.dataset.loaded = '1';
+
+  const tweets = getRecentTweets(symbol);
+  if (!tweets.length) {
+    inner.innerHTML += `<div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding:10px 0;">No tweets cached yet — hit Refresh.</div>`;
+    return;
+  }
+
+  const items = tweets.map(m => {
+    // Highlight the ticker symbol in the snippet
+    const highlighted = m.snippet.replace(
+      new RegExp(`\\$${symbol}`, 'gi'),
+      `<span class="hl">$${symbol}</span>`
+    );
+    return `<div class="tweet-item">
+      <div class="tweet-account">${m.account}</div>
+      <div class="tweet-body">
+        <div class="tweet-text">${highlighted}</div>
+        <div class="tweet-footer">
+          <span class="tweet-time">${formatTime(m.time)}</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  inner.innerHTML += items;
+}
+
+function renderTickers() {
+  const container = document.getElementById('ticker-container');
+  const ranked    = buildRanked(rawMentions);
+
+  // Stats bar
+  if (ranked.length) {
+    const cutoff    = Date.now() - HISTORY_DAYS * 86400 * 1000;
+    const inWindow  = rawMentions.filter(m => new Date(m.time).getTime() >= cutoff);
+    const activeAcc = new Set(inWindow.map(m => m.account)).size;
+    document.getElementById('stat-mentions').textContent = inWindow.length;
+    document.getElementById('stat-tickers').textContent  = new Set(inWindow.map(m => m.symbol)).size;
+    document.getElementById('stat-accounts').textContent = activeAcc;
+    document.getElementById('stats-bar').style.display   = 'flex';
+  } else {
+    document.getElementById('stats-bar').style.display = 'none';
+  }
+
+  if (!ranked.length) {
+    container.innerHTML = `<div class="state-msg">
+      <span class="big">🔍</span>
+      No $TICKERS found yet in the ${HISTORY_DAYS}-day window.<br>
+      Accounts may not have mentioned any tickers recently, or feeds failed.
+    </div>`;
+    return;
+  }
+
+  const maxCount = ranked[0].mentionCount;
+
+  const html = ranked.map((t, i) => {
+    const rankClass = i < 3 ? `rank-${i+1}` : '';
+    const barPct    = Math.round((t.mentionCount / maxCount) * 100);
+    const pills     = t.accounts.map(a =>
+      `<span class="ticker-account-pill">@${a}</span>`).join('');
+    const timeStr   = formatTime(t.lastTime);
+    const uaLabel   = `${t.uniqueAccounts} acct${t.uniqueAccounts !== 1 ? 's' : ''}`;
+    const tweetCount = getRecentTweets(t.symbol).length;
+
+    return `
+    <div class="ticker-row ${rankClass}" id="row-${t.symbol}" onclick="toggleDrawer('${t.symbol}')">
+      <div class="ticker-rank">#${i+1}</div>
+      <div class="ticker-symbol-col">
+        <div class="ticker-symbol">${t.symbol}</div>
+        <div class="mention-bar-wrap">
+          <div class="mention-bar-track">
+            <div class="mention-bar-fill" style="width:${barPct}%"></div>
+          </div>
+          <span class="mention-count">${t.mentionCount}x</span>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px;">${uaLabel}</div>
+      </div>
+      <div class="ticker-meta">
+        <div class="ticker-accounts">${pills}</div>
+        <div class="ticker-snippet">${t.recentSnippet}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:flex-end;gap:4px;flex-shrink:0;">
+        <div class="ticker-time">${timeStr}</div>
+        <div class="expand-hint">▸ tweets</div>
+      </div>
+    </div>
+    <div class="tweet-drawer" id="drawer-${t.symbol}" data-symbol="${t.symbol}">
+      <div class="tweet-drawer-inner">
+        <div class="tweet-drawer-header">
+          <span class="tweet-drawer-title">RECENT TWEETS — $${t.symbol}</span>
+          <span class="tweet-drawer-count">last ${tweetCount} in ${HISTORY_DAYS}d window</span>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+
+  container.innerHTML = `<div class="ticker-list">${html}</div>`;
+}
+
+// ── Interval ──────────────────────────────────────────────────────────────
+function updateInterval() {
+  const sel  = document.getElementById('interval-select');
+  const secs = parseInt(sel.value);
+  if (intervalTimer) clearInterval(intervalTimer);
+  const label = sel.options[sel.selectedIndex].text;
+  if (secs > 0) {
+    intervalTimer = setInterval(fetchAll, secs * 1000);
+    document.getElementById('interval-label').textContent = label;
+  } else {
+    document.getElementById('interval-label').textContent = 'disabled';
+  }
+}
+
+// ── Init ──────────────────────────────────────────────────────────────────
+renderAccounts();
+renderTickers();  // render from any cached data on load
+updateInterval();
+log('Tracker ready. Rankings are by mention frequency over the trailing 5 days.', 'info');
+</script>
+</body>
+</html>
